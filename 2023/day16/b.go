@@ -11,41 +11,118 @@ type Tile struct {
 	isEnergized bool
 }
 
+type Plane [][]Tile
+
+func (plane *Plane) disenergize() {
+	for y := 0; y < len(*plane); y++ {
+		for x := 0; x < len((*plane)[0]); x++ {
+			if (*plane)[y][x].isEnergized == true {
+				(*plane)[y][x].isEnergized = false
+			}
+		}
+	}
+}
+
+func (plane *Plane) countEnergizedTiles() int {
+	sum := 0
+
+	for _, row := range (*plane) {
+		for _, tile := range row {
+			if tile.isEnergized {
+				sum += 1
+			}
+		}
+	}
+
+	return sum
+}
+
 type Beam struct {
 	direction rune
 	x, y int
 }
 
-func main() {
-	file, err := os.Open(os.Args[1])	
-	defer file.Close()
+func (beam Beam) getNextBeam() Beam {
+	addX, addY := 0, 0
 
-	if (err != nil) {
-		fmt.Printf("File %s not found", os.Args[1])
+	if beam.direction == '<' {
+		addX = -1
+	} else if beam.direction == '>' {
+		addX = 1
+	} else if beam.direction == '^' {
+		addY = -1
+	} else if beam.direction == 'v' {
+		addY = 1
+	}
+
+	newBeam := Beam{
+		direction: beam.direction,
+		y: beam.y + addY,
+		x: beam.x + addX,
+	}
+
+	return newBeam
+}
+
+func (beam Beam) isBeamValid(tiles Plane) bool {
+	if beam.x >= 0 && beam.x < len(tiles[0]) && beam.y >= 0 && beam.y < len(tiles) {
+		return true
+	}
+
+	return false 
+}
+
+func main() {
+	content, err := openFile(os.Args[1])
+
+	if err != nil {
+		fmt.Println(err)
 		return
 	}
-	
-	sc := bufio.NewScanner(file)
-	tiles := make([][]Tile, 0)
 
-	for sc.Scan() {
-		line := sc.Text()
-
-		row := make([]Tile, len(line))
-		for index, value := range line {
-			row[index] = Tile {
-				isEnergized: false,
-				symbol: value,
-			}
-		}
-		tiles = append(tiles, row)
-	}
-
-	maximum := tracker(tiles)
+	plane := getPlane(content)
+	maximum := tracker(plane)
 	fmt.Println("Result:", maximum)
 }
 
-func tracker(tiles [][]Tile) int {
+func getPlane(content []string) Plane {
+	plane := make(Plane, len(content))
+
+	for lineIndex, line := range content {
+		row := make([]Tile, len(line))
+		
+		for charIndex, char := range line {
+			row[charIndex] = Tile {
+				isEnergized: false,
+				symbol: char,
+			}
+		}
+
+		plane[lineIndex] = row
+	}
+
+	return plane
+}
+
+func openFile(name string) ([]string, error) {
+	file, err := os.Open(name)	
+	defer file.Close()
+
+	content := make([]string, 0)
+
+	if (err != nil) {
+		return nil, fmt.Errorf("File %s not found", name)
+	}
+	
+	sc := bufio.NewScanner(file)
+	for sc.Scan() {
+		content = append(content, sc.Text())
+	}
+
+	return content, nil
+}
+
+func tracker(tiles Plane) int {
 	maxLeft := trackOneEdge(tiles, len(tiles), '>', -1, -2)
 	maxRight := trackOneEdge(tiles, len(tiles), '<', len(tiles[0]), -2)
 	maxTop := trackOneEdge(tiles, len(tiles[0]), 'v', -2, -1)
@@ -54,7 +131,7 @@ func tracker(tiles [][]Tile) int {
 	return max(maxLeft, maxRight, maxTop, maxBottom)
 }
 
-func trackOneEdge(tiles [][]Tile, maxIter int, direction rune, xStart, yStart int) int {
+func trackOneEdge(plane Plane, maxIter int, direction rune, xStart, yStart int) int {
 	maximum := 0
 	x, y := xStart, yStart
 
@@ -67,48 +144,20 @@ func trackOneEdge(tiles [][]Tile, maxIter int, direction rune, xStart, yStart in
 			y = i
 		}
 
-		startingBeam := Beam{ 
-			direction,
-			x, 
-			y,
-		}
-		sum := trackFromStartingBeam(tiles, startingBeam)
+		startingBeam := Beam{ direction, x, y }
+		sum := trackFromStartingBeam(plane, startingBeam)
 
 		if sum > maximum {
 			maximum = sum
 		}
 
-		resetTiles(tiles)
+		plane.disenergize()
 	}
 
 	return maximum
 }
 
-func sumEnergizedTiles(tiles [][]Tile) int {
-	sum := 0
-
-	for _, row := range tiles {
-		for _, tile := range row {
-			if tile.isEnergized {
-				sum += 1
-			}
-		}
-	}
-
-	return sum
-}
-
-func resetTiles (tiles [][]Tile) {
-	for y := 0; y < len(tiles); y++ {
-		for x := 0; x < len(tiles[0]); x++ {
-			if tiles[y][x].isEnergized == true {
-				tiles[y][x].isEnergized = false
-			}
-		}
-	}
-}
-
-func trackFromStartingBeam(tiles [][]Tile, startingBeam Beam) int {
+func trackFromStartingBeam(tiles Plane, startingBeam Beam) int {
 	beams := make([]Beam, 1)
 	beams[0] = startingBeam
 
@@ -135,14 +184,14 @@ func trackFromStartingBeam(tiles [][]Tile, startingBeam Beam) int {
 		historyBeams = append(historyBeams, newHistoryBeams...)
 	}
 
-	return sumEnergizedTiles(tiles)
+	return tiles.countEnergizedTiles()
 }
 
 func checkIfBeamExisted(currentBeam Beam, historyBeams []Beam) bool {
 	for _, prevBeam := range historyBeams {
 		if currentBeam.x == prevBeam.x &&
 			currentBeam.y == prevBeam.y &&
-			currentBeam.direction == prevBeam.direction {
+			(currentBeam.direction == prevBeam.direction) {
 			return true
 		}
 	}
@@ -150,26 +199,27 @@ func checkIfBeamExisted(currentBeam Beam, historyBeams []Beam) bool {
 	return false 
 }
 
-func trackSingleBeam(beam Beam, tiles [][]Tile) ([]Beam, []Beam) {
+func trackSingleBeam(beam Beam, plane Plane) ([]Beam, []Beam) {
 	newBeam := Beam{ 
 		direction: beam.direction, 
 		x: beam.x,
 		y: beam.y,
 	}
 
+	var newBeams []Beam = nil
 	historyBeams := make([]Beam, 0)
 
 	for ;; {
-		newBeam = getBeamFromNextStep(newBeam)
+		newBeam = newBeam.getNextBeam() 
 
-		if checkIfBeamIsValid(newBeam, tiles) == false {
-			return nil, historyBeams
+		if newBeam.isBeamValid(plane) == false {
+			break
 		}
 
 		historyBeams = append(historyBeams, newBeam)
 
-		currentTile := tiles[newBeam.y][newBeam.x]
-		tiles[newBeam.y][newBeam.x].isEnergized = true
+		currentTile := plane[newBeam.y][newBeam.x]
+		plane[newBeam.y][newBeam.x].isEnergized = true
 		
 		if isBeamNotChanging(newBeam, currentTile) == true {
 			continue
@@ -194,7 +244,7 @@ func trackSingleBeam(beam Beam, tiles [][]Tile) ([]Beam, []Beam) {
 				newBeam.direction = '>'
 			}	
 		} else if currentTile.symbol == '|' {
-			newBeams := make([]Beam, 2)
+			newBeams = make([]Beam, 2)
 			newBeams[0] = Beam{
 				direction: '^',
 				x: newBeam.x,
@@ -206,9 +256,9 @@ func trackSingleBeam(beam Beam, tiles [][]Tile) ([]Beam, []Beam) {
 				y: newBeam.y,
 			}
 
-			return newBeams, historyBeams
+			break
 		} else if currentTile.symbol == '-' {
-			newBeams := make([]Beam, 2)
+			newBeams = make([]Beam, 2)
 			newBeams[0] = Beam{
 				direction: '<',
 				x: newBeam.x,
@@ -220,9 +270,11 @@ func trackSingleBeam(beam Beam, tiles [][]Tile) ([]Beam, []Beam) {
 				y: newBeam.y,
 			}
 
-			return newBeams, historyBeams
+			break	
 		}
 	}
+
+	return newBeams, historyBeams
 }
 
 func isBeamNotChanging(beam Beam, tile Tile) bool {
@@ -233,34 +285,4 @@ func isBeamNotChanging(beam Beam, tile Tile) bool {
 	}
 
 	return false
-}
-
-func checkIfBeamIsValid(beam Beam, tiles [][]Tile) bool {
-	if beam.x >= 0 && beam.x < len(tiles[0]) && beam.y >= 0 && beam.y < len(tiles) {
-		return true
-	}
-
-	return false 
-}
-
-func getBeamFromNextStep(beam Beam) Beam {
-	addX, addY := 0, 0
-
-	if beam.direction == '<' {
-		addX = -1
-	} else if beam.direction == '>' {
-		addX = 1
-	} else if beam.direction == '^' {
-		addY = -1
-	} else if beam.direction == 'v' {
-		addY = 1
-	}
-
-	newBeam := Beam{
-		direction: beam.direction,
-		y: beam.y + addY,
-		x: beam.x + addX,
-	}
-
-	return newBeam
 }
