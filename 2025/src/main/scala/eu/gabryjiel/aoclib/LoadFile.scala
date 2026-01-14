@@ -12,4 +12,11 @@ object LoadFile {
     source.close()
     lines
   }
+
+  def loadResourceAsString(resourcePath: String): String = {
+    val source = Source.fromResource(resourcePath)
+    val lines = source.getLines().toArray.mkString("\n")
+    source.close()
+    lines
+  }
 }
